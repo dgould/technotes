@@ -1,0 +1,68 @@
+HOWTO: Install service to disable console blanking
+
+Blanking the console ("for power-saving") is a nice idea when needed, but it's
+annoying and potentially dangerous, because if you can't see the console's
+content, you can't know its state, and therefore can't know what keypress is
+safe. It's especially pointless for VMs, where the console is virtual anyway.
+This one was surprisingly complicated. 
+
+First part of solution is that blanking can be disabled via:
+
+$ setterm -blank 0 -powersave off -powerdown 0
+
+ref:
+http://superuser.com/questions/152347/change-linux-console-screen-blanking-behavior
+
+But that's just for the session. Getting it to happen at startup required
+learning how to write an init script. Which is plenty useful in its own right,
+so let's document it here. Ref:
+http://www.groupsrv.com/linux/about159299.html
+
+Key points:
+* init scripts go in /etc/init.d/
+* to be valid for chkconfig, init scripts must have an INIT INFO comment block
+* an init script is registered as a service via $ chkconfig --add $NAME
+* the service can then be started/stopped via $ service $NAME (start|stop)
+* and its autostart behavior can be set via $ chkconfig $NAME (on|off) 
+
+Combining info from a few refs, I created this script. (Per one of the
+comments, the loop may or may not be necessary -- someone claims the setting
+is global to all tty's.):
+
+----- BEGIN SCRIPT "my_setterm" -----
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides: my_setterm
+# Required-Start:
+# Required-Stop:
+# Default-Start: 3 5
+# Default-Stop: 0 1 2 6
+# Short-Description: disable console blanking
+# Description: ref.
+# http://superuser.com/questions/152347/change-linux-console-screen-blanking-behavior
+# http://www.groupsrv.com/linux/about159299.html
+### END INIT INFO
+
+[ "$1" == "start" ] || exit 0 # only initialize everything when called as
+/etc/init.d/setterm start
+
+for term in /dev/tty[0-9]*; do # select all ttyNN, but skip ttyS*
+        setterm -blank 0 >$term <$term
+        setterm -powersave off >$term <$term
+        setterm -powerdown 0 >$term <$term
+done
+----- END SCRIPT "my_setterm" -----
+
+And I installed it thusly:
+
+1. put the script in /etc/init.d/my_setterm
+2. $ chmod 755 /etc/init.d/my_setterm
+3. $ chkconfig --add my_setterm
+4. $ chkconfig my_setterm on
+5. $ service my_setterm start 
+
+From then on, no blanking. Even right after a reboot, before logging in. I've
+made this part of my routine for all new VMs I create, right after installing
+the guest OS and VMWare tools.
+
